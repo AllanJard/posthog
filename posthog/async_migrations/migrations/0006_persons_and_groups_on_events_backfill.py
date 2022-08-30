@@ -205,7 +205,17 @@ class Migration(AsyncMigrationDefinition):
             ),
             AsyncMigrationOperation(fn=self._create_dictionaries, rollback_fn=self._clear_temporary_tables),
             AsyncMigrationOperationSQL(
-                sql=f"""
+                sql=self._alter_table_update_sql(),
+                sql_settings={"max_execution_time": 0},
+                rollback=None,
+                per_shard=True,
+            ),
+            AsyncMigrationOperation(fn=self._wait_for_mutation_done,),
+            AsyncMigrationOperation(fn=self._clear_temporary_tables),
+        ]
+
+    def _alter_table_update_sql(self, where_clause="WHERE person_id = toUUIDOrZero('')"):
+        return f"""
                     ALTER TABLE {EVENTS_DATA_TABLE()}
                     {{on_cluster_clause}}
                     UPDATE
@@ -236,15 +246,8 @@ class Migration(AsyncMigrationDefinition):
                         group2_created_at = dictGetDateTime('{settings.CLICKHOUSE_DATABASE}.groups_dict', 'created_at', tuple(team_id, 2, $group_2)),
                         group3_created_at = dictGetDateTime('{settings.CLICKHOUSE_DATABASE}.groups_dict', 'created_at', tuple(team_id, 3, $group_3)),
                         group4_created_at = dictGetDateTime('{settings.CLICKHOUSE_DATABASE}.groups_dict', 'created_at', tuple(team_id, 4, $group_4))
-                    WHERE person_id = toUUIDOrZero('')
-                """,
-                sql_settings={"max_execution_time": 0},
-                rollback=None,
-                per_shard=True,
-            ),
-            AsyncMigrationOperation(fn=self._wait_for_mutation_done,),
-            AsyncMigrationOperation(fn=self._clear_temporary_tables),
-        ]
+                    {where_clause}
+                """
 
     def _dictionary_connection_string(self):
         result = f"DB '{settings.CLICKHOUSE_DATABASE}'"
